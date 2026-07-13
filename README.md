@@ -38,7 +38,7 @@ Fixed-gain PID controllers degrade quickly on robotic manipulators once payload,
 
 | 1st Training Loop | 4th Training Loop |
 |:---:|:---:|
-| ![1st training loop](docs/assets/loop1.gif) | ![4th training loop](docs/assets/loop4.gif) |
+| ![1st training loop](docs/assets/loop_1.gif) | ![4th training loop](docs/assets/loop_4.gif) |
 
 ---
 
