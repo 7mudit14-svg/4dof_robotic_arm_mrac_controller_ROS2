@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="my_robot">
+
+  <xacro:arg name="initial_positions_file"
+    default="$(find my_robot_moveit_config)/config/initial_positions.yaml"/>
+  <xacro:arg name="payload_mass" default="0.0"/>
+  <xacro:arg name="use_sim"      default="false"/>
+
+  <!-- Include full robot from my_robot_description (ros2_control is already inside) -->
+  <xacro:include filename="$(find my_robot_description)/urdf/my_robot.urdf.xacro"/>
+
+</robot>

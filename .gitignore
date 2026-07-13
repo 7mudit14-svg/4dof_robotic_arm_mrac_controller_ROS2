@@ -1,0 +1,23 @@
+# ROS2 / colcon build artifacts — never commit these
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS / misc
+*.Zone.Identifier
+*.swp
+.DS_Store
+
+# MoveIt Setup Assistant internals
+.setup_assistant

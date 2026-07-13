@@ -1,0 +1,189 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="payload_mass" default="0.0"/>
+
+  <!-- ═══════════════ BASE ═══════════════ -->
+  <link name="base_link">
+    <visual>
+      <geometry><box size="0.4 0.4 0.1"/></geometry>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.4 0.4 0.1"/></geometry>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <mass value="5.0"/>
+      <inertia ixx="0.0433" ixy="0" ixz="0"
+               iyy="0.0433" iyz="0" izz="0.0833"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════ SHOULDER ═══════════════ -->
+  <link name="shoulder_link">
+    <visual>
+      <geometry><cylinder length="0.2" radius="0.1"/></geometry>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.2 0.2 0.2"/></geometry>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <mass value="1.5"/>
+      <inertia ixx="0.0108" ixy="0" ixz="0"
+               iyy="0.0108" iyz="0" izz="0.0075"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════ ARM ═══════════════ -->
+  <link name="arm_link">
+    <visual>
+      <geometry><cylinder length="0.6" radius="0.05"/></geometry>
+      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.1 0.1 0.6"/></geometry>
+      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.0308" ixy="0" ixz="0"
+               iyy="0.0308" iyz="0" izz="0.00125"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════ ELBOW ═══════════════ -->
+  <link name="elbow_link">
+    <visual>
+      <geometry><cylinder length="0.4" radius="0.05"/></geometry>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.1 0.1 0.4"/></geometry>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <mass value="0.8"/>
+      <inertia ixx="0.0109" ixy="0" ixz="0"
+               iyy="0.0109" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════ HAND ═══════════════ -->
+  <link name="hand_link">
+    <visual>
+      <geometry><box size="0.1 0.1 0.02"/></geometry>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.1 0.1 0.02"/></geometry>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <mass value="0.3"/>
+      <inertia ixx="0.000255" ixy="0" ixz="0"
+               iyy="0.000255" iyz="0" izz="0.0005"/>
+    </inertial>
+  </link>
+
+  <link name="tool_link"/>
+
+  <!-- ═══════════════ PAYLOAD (mass changes per experiment) ═══════════════ -->
+  <link name="payload_link">
+    <visual>
+      <geometry><box size="0.06 0.06 0.06"/></geometry>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.06 0.06 0.06"/></geometry>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <mass value="$(arg payload_mass)"/>
+      <inertia
+        ixx="${max(0.0001, $(arg payload_mass) * 0.0006)}"
+        ixy="0" ixz="0"
+        iyy="${max(0.0001, $(arg payload_mass) * 0.0006)}"
+        iyz="0"
+        izz="${max(0.0001, $(arg payload_mass) * 0.0006)}"/>
+    </inertial>
+  </link>
+
+  <!-- Dummy world link — fixes KDL root inertia warning -->
+  <link name="world"/>
+  <joint name="world_base_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════ JOINTS ═══════════════ -->
+
+  <joint name="joint1" type="revolute">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="150.0" velocity="2.0" lower="-3.14" upper="3.14"/>
+    <!-- Real-world damping: joint1 (base) supports full arm, heaviest load -->
+    <!-- damping: viscous damping (Nm·s/rad), friction: Coulomb friction (Nm) -->
+    <dynamics damping="1.0" friction="0.3"/>
+  </joint>
+
+  <joint name="joint2" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="arm_link"/>
+    <origin xyz="0 0 0.2" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="150.0" velocity="2.0" lower="0" upper="2.5"/>
+    <!-- joint2 (shoulder): significant load, high damping for stability -->
+    <dynamics damping="0.8" friction="0.25"/>
+  </joint>
+
+  <joint name="joint3" type="revolute">
+    <parent link="arm_link"/>
+    <child link="elbow_link"/>
+    <origin xyz="0 0 0.6" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100.0" velocity="2.0" lower="0" upper="2.5"/>
+    <!-- joint3 (elbow): medium load and damping -->
+    <dynamics damping="0.6" friction="0.15"/>
+  </joint>
+
+  <joint name="joint4" type="revolute">
+    <parent link="elbow_link"/>
+    <child link="hand_link"/>
+    <origin xyz="0 0 0.4" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="50.0" velocity="3.0" lower="-3.14" upper="3.14"/>
+    <!-- joint4 (wrist/tool): light load, minimal damping for precision -->
+    <dynamics damping="0.2" friction="0.08"/>
+  </joint>
+
+  <joint name="hand_tool_joint" type="fixed">
+    <parent link="hand_link"/>
+    <child link="tool_link"/>
+    <origin xyz="0 0 0.02" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="payload_joint" type="fixed">
+    <parent link="tool_link"/>
+    <child link="payload_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>
