@@ -19,34 +19,34 @@
 
 ## Overview
 
-Fixed-gain PID controllers degrade quickly on robotic manipulators once payload, friction, or gravitational loading change — no single set of gains handles all operating conditions. This project replaces the fixed-gain assumption with **Direct MRAC**: a controller that adjusts its own feedback and feedforward gains online, in closed loop, so the arm's response tracks a chosen reference model regardless of these uncertainties. A **robust augmentation** (a 22-basis-function online-learned compensation term) is layered on top to absorb unmodeled friction, Coriolis coupling, and other dynamics that a from-scratch model would otherwise have to capture explicitly.
+Fixed-gain PID controllers degrade quickly on robotic manipulators once payload, friction, or gravitational loading change — no single set of gains handles all operating conditions. This project splits the problem into two cooperating pieces:
+
+- **Direct MRAC** models and controls the arm itself: it adjusts feedback and feedforward gains online, in closed loop, so each joint's response tracks a chosen reference model — this is the part responsible for the arm's core tracking behavior.
+- A **robust augmentation** sits on top of it, dedicated purely to uncertainties and disturbances the MRAC layer wasn't designed to handle — unmodeled friction, Coriolis coupling, and payload/gravity variation — via a small online-learned compensation term.
 
 **MoveIt 2** handles one-shot Cartesian/joint-space path planning; the **custom MRAC controller** takes over closed-loop tracking of that plan at **1 kHz**, adapting its gains as it goes. This was built as a Bachelor's Thesis Project (BTP) at LNMIIT, ECE Department.
-
-> 📄 Full presentation: [`docs/BTP_Presentation.pdf`](docs/BTP_Presentation.pdf)
 
 ---
 
 ## Demo
 
 <!--
-  Add your 1st-loop / 4th-loop training videos here once uploaded to the repo.
-  See the "Adding the demo videos" section further down for the exact steps —
-  GitHub gives you an embeddable link the moment you drag a video into a
-  README on the website, you just paste it in below.
+  1st-loop / 4th-loop training clips, as autoplaying GIFs so they run the
+  moment the repo page loads (regular embedded video needs a click — GIFs
+  don't). Drop the .gif files in docs/assets/ and reference them below.
 -->
 
 | 1st Training Loop | 4th Training Loop |
 |:---:|:---:|
-| *(video link goes here)* | *(video link goes here)* |
+| ![1st training loop](docs/assets/loop1.gif) | ![4th training loop](docs/assets/loop4.gif) |
 
 ---
 
 ## Why MRAC?
 
-<img src="docs/assets/mrac_block_diagram.png" width="800" alt="Direct MRAC control architecture">
+### Direct MRAC — modeling and tracking the arm
 
-The controller drives a **reference model** `G_ref(s) = ω_n² / (s² + 2ζω_n·s + ω_n²)` representing the desired second-order joint response, and adapts feedback gain `K_x` and feedforward gain `K_r` online:
+This is the layer that **models and controls the arm itself**. Rather than deriving and inverting the full nonlinear dynamics of the manipulator, Direct MRAC drives each joint toward a **reference model** `G_ref(s) = ω_n² / (s² + 2ζω_n·s + ω_n²)` representing the desired second-order response, and adapts feedback gain `K_x` and feedforward gain `K_r` online until the real joint's behavior matches it:
 
 ```
 u = K̂_x · q + K̂_r · r
@@ -56,18 +56,22 @@ K̇_r = −Γ_r ∫ e·sign(b)·r dt
 
 Adaptation is derived from a Lyapunov stability argument and convergence is established via **Barbalat's Lemma** — the same theoretical basis covered in Direct MRAC and Robust MRAC of standard adaptive-control references (see [References](#references)).
 
-### Handling unmodeled dynamics
+### Robust augmentation — handling uncertainty and disturbances
 
-<img src="docs/assets/robust_mrac_diagram.png" width="800" alt="Robust MRAC augmentation with basis functions">
-
-The baseline MRAC torque is augmented with a learned compensation term:
+The Direct MRAC layer above assumes it's controlling a known nominal system. In reality the arm also experiences **friction, payload changes, and unmodeled coupling** that the reference-model tracking alone won't correct for. The robust term exists purely to handle that: it augments the baseline MRAC torque with a separate, online-learned compensation term dedicated to disturbances and uncertainty:
 
 ```
 τ = u_mrac ± Ŵᵀ·α(x)
 Ŵ̇ = Γ ∫ eᵀ·P·B·α(x(t)) dt
 ```
 
-`α(x)` is a 22-term basis vector combining `sin(q)`, `cos(q)` (gravity/geometric nonlinearities), `tanh(q̇)` (smooth Coulomb-friction approximation), and cross-product terms (Coriolis/coupling interactions) — giving the controller a structured way to learn disturbances it was never explicitly modeled for.
+`α(x)` is a 6-term basis vector combining `sin(q)`, `cos(q)` (gravity/geometric nonlinearities), `tanh(q̇)` (smooth Coulomb-friction approximation), and cross-product terms (Coriolis/coupling interactions) — giving the controller a structured way to learn disturbances it was never explicitly modeled for, while the MRAC layer above keeps handling the arm's core tracking behavior.
+
+### Our implemented controller
+
+<img src="docs/assets/robust_mrac_controller.png" width="800" alt="Implemented robust direct MRAC controller block diagram">
+
+This is the actual block diagram of what's running on the arm: the reference model and gain-adaptation loop (Direct MRAC, driving `K_x`/`K_r`) combined with the weight-estimation loop (`Ŵ`) feeding a disturbance-compensation term `u_ad` into the control law.
 
 ---
 
@@ -166,7 +170,7 @@ Joint 2's Lyapunov value settles at a visibly higher level than the other joints
 │       └── diagnose_mrac.py
 │
 ├── scripts/mrac_tuning_workflow.sh   # step-by-step tuning quick-reference
-└── docs/                        # presentation PDF + images used in this README
+└── docs/                        # images (and videos) used in this README
 ```
 
 ---
@@ -239,12 +243,7 @@ For a full tuning walkthrough (build → launch → monitor → test → tune �
 
 ## Authors
 
-- **Mudit Todi** — 23UEC578
-- Rachit Srivastava — 23UEC600
-- Utkarsh Kumar — 23UEC637
-
-Department of Electronics and Communication Engineering, LNMIIT
-Supervised by Dr. Bharat Verma
+- **Mudit Todi**
 
 ## License
 
