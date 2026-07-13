@@ -54,7 +54,7 @@ K̇_x = −Γ_x ∫ e·sign(b)·x dt
 K̇_r = −Γ_r ∫ e·sign(b)·r dt
 ```
 
-Adaptation is derived from a Lyapunov stability argument and convergence is established via **Barbalat's Lemma** — the same theoretical basis covered in Direct MRAC (§17.3) and Robust MRAC (§19.2) of standard adaptive-control references (see [References](#references)).
+Adaptation is derived from a Lyapunov stability argument and convergence is established via **Barbalat's Lemma** — the same theoretical basis covered in Direct MRAC and Robust MRAC of standard adaptive-control references (see [References](#references)).
 
 ### Handling unmodeled dynamics
 
