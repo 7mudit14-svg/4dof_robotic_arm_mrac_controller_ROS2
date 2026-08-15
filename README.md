@@ -223,21 +223,30 @@ For a full tuning walkthrough (build → launch → monitor → test → tune �
 
 ---
 
+## Acknowledgements
+
+This project was developed as a Bachelor's Thesis Project (BTP) at **The LNM Institute of Information Technology (LNMIIT), Jaipur**, ECE Department.
+
+Special thanks to **Dr. Bharat Verma** (Assistant Professor, ECE, LNMIIT) for his mentorship, guidance, and foundational research in adaptive control — particularly his work on fast-adaptation MRAC techniques — which directly inspired and informed the design of this controller.
+
+---
+
 ## References
 
-1. K. J. Åström and B. Wittenmark, *Adaptive Control*, 2nd ed., Addison-Wesley, 1995.
-2. M. W. Spong, S. Hutchinson, M. Vidyasagar, *Robot Modeling and Control*, Wiley, 2006.
-3. J. J. Craig, *Introduction to Robotics: Mechanics and Control*, 3rd ed., Pearson, 2005.
-4. H. K. Khalil, *Nonlinear Systems*, 3rd ed., Prentice Hall, 2002.
-5. I. D. Landau, R. Lozano, M. M'Saad, A. Karimi, *Adaptive Control: Algorithms, Analysis and Applications*, 2nd ed., Springer, 2011.
-6. P. A. Ioannou and J. Sun, *Robust Adaptive Control*, Prentice Hall, 1996.
-7. B. Siciliano, L. Sciavicco, L. Villani, G. Oriolo, *Robotics: Modelling, Planning and Control*, Springer, 2009.
-8. J.-J. E. Slotine and W. Li, *Applied Nonlinear Control*, Prentice Hall, 1991.
-9. K. S. Narendra and A. M. Annaswamy, *Stable Adaptive Systems*, Prentice Hall, 1989.
-10. G. Tao, *Adaptive Control Design and Analysis*, Wiley, 2003.
-11. [ROS 2 Documentation](https://docs.ros.org)
-12. [Gazebo Simulator Documentation](https://gazebosim.org)
-13. [MoveIt Motion Planning Framework](https://moveit.ros.org)
+1. B. Verma, R. Dey, S. K. Jain, and P. K. Padhy, "Proportional learning rate model reference adaptive control for fast adaptation," *2017 IEEE International Conference on Power, Control, Signals and Instrumentation Engineering (ICPCSI)*, Chennai, India, 2017. DOI: [10.1109/ICPCSI.2017.8279170](https://ieeexplore.ieee.org/document/8279170)
+2. K. J. Åström and B. Wittenmark, *Adaptive Control*, 2nd ed., Addison-Wesley, 1995.
+3. M. W. Spong, S. Hutchinson, M. Vidyasagar, *Robot Modeling and Control*, Wiley, 2006.
+4. J. J. Craig, *Introduction to Robotics: Mechanics and Control*, 3rd ed., Pearson, 2005.
+5. H. K. Khalil, *Nonlinear Systems*, 3rd ed., Prentice Hall, 2002.
+6. I. D. Landau, R. Lozano, M. M'Saad, A. Karimi, *Adaptive Control: Algorithms, Analysis and Applications*, 2nd ed., Springer, 2011.
+7. P. A. Ioannou and J. Sun, *Robust Adaptive Control*, Prentice Hall, 1996.
+8. B. Siciliano, L. Sciavicco, L. Villani, G. Oriolo, *Robotics: Modelling, Planning and Control*, Springer, 2009.
+9. J.-J. E. Slotine and W. Li, *Applied Nonlinear Control*, Prentice Hall, 1991.
+10. K. S. Narendra and A. M. Annaswamy, *Stable Adaptive Systems*, Prentice Hall, 1989.
+11. G. Tao, *Adaptive Control Design and Analysis*, Wiley, 2003.
+12. [ROS 2 Documentation](https://docs.ros.org)
+13. [Gazebo Simulator Documentation](https://gazebosim.org)
+14. [MoveIt Motion Planning Framework](https://moveit.ros.org)
 
 ---
 
