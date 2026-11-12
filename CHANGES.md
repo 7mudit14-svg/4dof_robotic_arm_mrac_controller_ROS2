@@ -163,7 +163,7 @@ Also checked:
 | Issue | Status |
 |---|---|
 | `gripper_controller` fails to activate: `gripper_right_finger_joint` has no command interface. | Not fixed. The arm is unaffected. |
-| The demo GIFs in `docs/assets/` are from the first version. | A recording of the current controller is to be added. The plots were regenerated. |
+| `loop_1.gif` and `loop_4.gif` in `docs/assets/` are from the first version. | Kept for comparison. `200th.gif` shows the current controller after 200 random training poses. The plots were regenerated. |
 | Joint 1 does not benefit from training, and in a 500-pose session its gains drifted to their bounds. | Open. Leakage (`sigma`) toward the initial gains is the next thing to try; it is off by default. |
 | In one 90-minute session the ROS `/clock` topic stopped being delivered after 25 minutes (WSL 2). The run itself continued normally. | `mrac_plot` rebuilds the time axis from the sample count when this happens. Cause not investigated. |
 | No run with a payload has been done on the current controller. | Open. |

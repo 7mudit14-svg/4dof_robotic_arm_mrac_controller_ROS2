@@ -33,11 +33,11 @@ Built as a Bachelor's Thesis Project (BTP) at LNMIIT, ECE Department.
 
 ## Demo
 
-Clips recorded with the first version of the controller (see [What changed](#what-changed-from-the-first-version)); a recording of the current controller is to be added:
+The first two clips were recorded with the first version of the controller (see [What changed](#what-changed-from-the-first-version)). The third shows the current controller on the same evaluation loop after training on 200 random poses.
 
-| 1st Training Loop | 4th Training Loop |
-|:---:|:---:|
-| ![1st training loop](docs/assets/loop_1.gif) | ![4th training loop](docs/assets/loop_4.gif) |
+| 1st Training Loop | 4th Training Loop | After 200 Random Training Poses |
+|:---:|:---:|:---:|
+| ![1st training loop](docs/assets/loop_1.gif) | ![4th training loop](docs/assets/loop_4.gif) | ![Evaluation loop after 200 random training poses](docs/assets/200th.gif) |
 
 ---
 
