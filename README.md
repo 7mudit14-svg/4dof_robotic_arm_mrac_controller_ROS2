@@ -33,7 +33,7 @@ Built as a Bachelor's Thesis Project (BTP) at LNMIIT, ECE Department.
 
 ## Demo
 
-Clips recorded with the first version of the controller (see [What changed](#what-changed-from-the-first-version)):
+Clips recorded with the first version of the controller (see [What changed](#what-changed-from-the-first-version)); a recording of the current controller is to be added:
 
 | 1st Training Loop | 4th Training Loop |
 |:---:|:---:|
@@ -157,31 +157,87 @@ Full URDF/Xacro specification — inertia tensors, mass distribution, joint limi
 
 ## Results
 
-Evaluation: `ros2 run my_robot_commander_py test_moveit` with its defaults — four Home → Pose 1 → Pose 2 → Home loops, 10 s hold at each pose, MoveIt velocity/acceleration scaling 0.05, weights starting from their initial values, no payload, Gazebo headless. All 16 moves completed. Error is plant position minus reference model, in rad; the error against the planned trajectory is the same to four decimals.
+One recorded session with the current controller, starting from zero weights `Ŵ` and the initial gains, no payload, Gazebo headless:
+
+1. one evaluation loop (Home → Pose 1 → Pose 2 → Home, 10 s hold at each pose, velocity/acceleration scaling 0.05),
+2. 50 random training poses, then the evaluation loop again,
+3. 150 more random training poses (200 in total), then the evaluation loop again.
+
+Training poses are random reachable joint targets at random speed (velocity scaling 0.15–0.6, 1 s hold). 199 of the 200 training moves and all 12 evaluation moves succeeded. Error is plant position minus reference model, in rad. Reproduce with the commands in [Recording a session and making the graphs](#recording-a-session-and-making-the-graphs).
+
+### Evaluation loop before and after training
+
+<img src="docs/assets/eval_summary.png" width="900" alt="Mean and max evaluation error per joint, before training and after 50 and 200 training poses">
+
+| Mean \|e\| | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
+|---|---|---|---|---|
+| Before training | 0.0018 | 0.0032 | 0.0020 | 0.0009 |
+| After 50 training poses | 0.0023 | 0.0015 | 0.0020 | 0.0005 |
+| After 200 training poses | 0.0017 | 0.0014 | 0.0015 | 0.0012 |
+
+| Max \|e\| | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
+|---|---|---|---|---|
+| Before training | 0.0091 | 0.0178 | 0.0094 | 0.0028 |
+| After 50 training poses | 0.0079 | 0.0055 | 0.0089 | 0.0059 |
+| After 200 training poses | 0.0094 | 0.0063 | 0.0057 | 0.0043 |
+
+The error at the end of each loop is below 0.002 rad on every joint in all three evaluations.
+
+- **Joint 2 (shoulder)** benefits most: its mean error halves and its peak error drops to about a third after training.
+- **Joint 3 (elbow)** improves moderately (peak 0.0094 → 0.0057).
+- **Joint 1 (waist)** does not change.
+- **Joint 4 (wrist)** is slightly worse after training, at a level around 0.001 rad.
+
+Error over the evaluation loop, one line per evaluation:
+
+<img src="docs/assets/eval_error.png" width="900" alt="Tracking error over the evaluation loop for each evaluation">
+
+### Error during training
+
+Mean and max error of every training pose, over all four joints and per joint:
+
+<img src="docs/assets/train_error_overall.png" width="800" alt="Mean and max tracking error per training pose over all joints">
+
+<img src="docs/assets/train_error.png" width="900" alt="Mean and max tracking error per training pose, per joint">
+
+The error on random poses stays roughly level over the 200 poses (mean around 0.005 rad, worst-joint peak around 0.02 rad); only joint 2 shows a clear drop towards the end. Random poses are faster and larger moves than the evaluation loop, so their error is higher than in the tables above.
+
+### Adaptive gains and weights over the session
+
+Shaded bands are the three evaluation loops.
+
+<p float="left">
+  <img src="docs/assets/mrac_Kx.png" width="440" alt="Kp and Kd adaptation">
+  <img src="docs/assets/mrac_Kr.png" width="440" alt="Kr adaptation">
+</p>
+<p float="left">
+  <img src="docs/assets/mrac_W_hat.png" width="440" alt="Robust weight norm">
+  <img src="docs/assets/mrac_W_gravity.png" width="440" alt="Gravity and offset weights of joints 2 and 3">
+</p>
+
+The gains keep moving while the arm visits new poses; they do not settle to fixed values within 200 poses. The gravity weights of joint 3 settle near 2–2.5 Nm, and joint 2's weight on `sin(q2)` ends near 4.5 Nm. The wrist's velocity gain sits at its bound (`Kd_max` = 0.3) for most of the session.
+
+Tracking error, error energy and torque over the whole session:
+
+<img src="docs/assets/mrac_e_mrac.png" width="900" alt="Tracking error over the session">
+<p float="left">
+  <img src="docs/assets/mrac_lyapunov.png" width="440" alt="Tracking-error energy">
+  <img src="docs/assets/mrac_tau.png" width="440" alt="Commanded torque">
+</p>
+
+### Comparison with the first version
+
+Same evaluation poses; first-version values are from the earlier README (four loops, goal tolerance ±0.1 rad).
 
 | Metric | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
 |---|---|---|---|---|
-| Loop 1 — max \|e\| | 0.0077 | 0.0484 | 0.1113 | 0.0046 |
-| Loop 1 — mean \|e\| | 0.0029 | 0.0049 | 0.0069 | 0.0017 |
-| Loop 4 — max \|e\| | 0.0106 | 0.0134 | 0.0080 | 0.0063 |
-| Loop 4 — mean \|e\| | 0.0044 | 0.0019 | 0.0029 | 0.0023 |
-| Final e after the last hold | 0.0002 | −0.0003 | −0.0002 | 0.0001 |
-
-- Joints 2 and 3 carry the gravity load and improve from loop to loop as the gravity weights are learned. Joint 3 showed a brief 0.147 rad peak in loop 2 before settling below 0.01 rad in loops 3 and 4.
-- Joints 1 and 4 carry no gravity. Their mean error stays below 0.005 rad and does not improve over the loops.
-
-**Comparison with the first version** (same pose loop, values from the earlier README):
-
-| Metric | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
-|---|---|---|---|---|
-| First version — final e | 0.0100 | 0.0339 | 0.0055 | 0.0151 |
-| Current — final e | 0.0002 | 0.0003 | 0.0002 | 0.0001 |
 | First version — mean \|e\| | 0.0075 | 0.0342 | 0.0158 | 0.0049 |
-| Current — mean \|e\|, loop 4 | 0.0044 | 0.0019 | 0.0029 | 0.0023 |
+| Current, before training — mean \|e\| | 0.0018 | 0.0032 | 0.0020 | 0.0009 |
+| Current, after 200 poses — mean \|e\| | 0.0017 | 0.0014 | 0.0015 | 0.0012 |
+| First version — max \|e\| | 0.0322 | 0.1994 | 0.1544 | 0.0245 |
+| Current, after 200 poses — max \|e\| | 0.0094 | 0.0063 | 0.0057 | 0.0043 |
 
-**Saved weights.** After 8 random training poses (`mrac_trainer`), the weights were saved, the simulation restarted and the weights loaded. In the first evaluation loop joint 3 improved (max 0.111 → 0.019, mean 0.0069 → 0.0033) and so did joint 2's mean (0.0049 → 0.0035); joint 2's max was slightly worse (0.048 → 0.057). This is a single run.
-
-**Not yet measured:** payload variation, and plots for the current controller. The plot images in `docs/assets/` (`mrac_e_mrac.png`, `mrac_Kx.png`, `mrac_Kr.png`, `mrac_W_hat.png`, `mrac_lyapunov.png`) were produced by the first version. Regenerate them with `mrac_monitor` (press `s` to save).
+**Not yet measured:** payload variation, and a fixed-gain baseline on the same poses. This is a single session with one random seed.
 
 ---
 
@@ -238,12 +294,15 @@ The first implementation is kept in `mrac_controller/src/mrac_controller.cpp` fo
 ├── my_robot_bringup/                # Full-system launch
 │   ├── launch/my_robot_gz.launch.py     # entry point
 │   ├── config/ros2_controllers.yaml     # controller manager: 1 kHz, controller types
+│   ├── worlds/recording.sdf             # empty world + a fixed camera (record_camera:=true)
 │   └── scripts/                         # check_mrac_system.py, debug_system.py
 │
 ├── my_robot_commander_py/           # Python tools
 │   └── my_robot_commander_py/
 │       ├── test_moveit.py               # evaluation loop (Home / Pose 1 / Pose 2)
-│       ├── mrac_trainer.py              # random-pose training, then saves the weights
+│       ├── mrac_trainer.py              # random-pose training (+ evaluation checkpoints), saves the weights
+│       ├── mrac_record.py               # records a session for plotting
+│       ├── mrac_plot.py                 # figures from a recording
 │       ├── mrac_monitor.py              # matplotlib plots of errors, gains, weights
 │       ├── mrac_system_test.py / mrac_integration_test.py
 │       └── diagnose_mrac.py
@@ -287,6 +346,7 @@ ros2 run my_robot_commander_py mrac_monitor
 | `use_rviz:=false` | `true` | do not start RViz |
 | `payload_mass:=0.5` | `0.0` | payload mass at the tool, in kg |
 | `moveit_delay:=20.0` | `20.0` | seconds before `move_group` starts |
+| `record_camera:=true` | `false` | world with a fixed camera; images on the ROS topic `/rec_cam` |
 
 ### Evaluation loop settings
 
@@ -303,6 +363,7 @@ ros2 run my_robot_commander_py test_moveit --ros-args -p n_loops:=2 -p dwell_sec
 | `vel_scale`, `acc_scale` | 0.05 | MoveIt velocity / acceleration scaling |
 | `adaptive_mode` | true | `false` switches the robust term off |
 | `result_timeout` | 120.0 | per-move timeout, in seconds |
+| `pose_tolerance` | 0.01 | how close to the named pose MoveIt's goal must be, in rad |
 
 ### Training and saved weights
 
@@ -316,6 +377,28 @@ ros2 service call /mrac_arm_controller/load_weights std_srvs/srv/Trigger
 ```
 
 The file is `~/.ros/mrac_weights.yaml` unless `weights_file` is set. Set `load_weights_on_activate: true` in `robust_direct_mrac_params.yaml` to start every run from the saved weights.
+
+`mrac_trainer` parameters: `n_poses` (20), `dwell_sec` (3.0), `vel_min` / `vel_max` (0.05 / 0.3), `seed` (0 = random), `eval_at` (training-pose counts at which to run an evaluation loop), `eval_dwell_sec` (10.0), `eval_vel_scale` (0.05).
+
+### Recording a session and making the graphs
+
+Three terminals, each with `source install/setup.bash`:
+
+```bash
+# 1. simulation (restart it for every session so the weights start from zero)
+ros2 launch my_robot_bringup my_robot_gz.launch.py
+
+# 2. recorder — start it before the session; it stops by itself at the end
+ros2 run my_robot_commander_py mrac_record --ros-args -p out_dir:=$HOME/mrac_recordings/run1 -p decimate:=5
+
+# 3. the session: evaluate, train 50, evaluate, train to 200, evaluate
+ros2 run my_robot_commander_py mrac_trainer --ros-args -p n_poses:=200 -p eval_at:="[0, 50, 200]" -p dwell_sec:=1.0 -p vel_min:=0.15 -p vel_max:=0.6 -p seed:=2026
+
+# afterwards: figures and tables (no simulation needed)
+ros2 run my_robot_commander_py mrac_plot --ros-args -p in_dir:=$HOME/mrac_recordings/run1
+```
+
+`mrac_plot` writes the figures shown in [Results](#results) plus `summary.md` into the recording folder (or `out_dir`). The same recorder works with `test_moveit`; each of its loops then appears as one evaluation.
 
 ### Tuning
 
@@ -355,6 +438,7 @@ After editing the YAML, run `colcon build --packages-select mrac_controller` and
 | `/mrac/ref_model` | `[q_m, q̇_m]` per joint |
 | `/mrac/lyapunov_V` | tracking-error energy `eᵀPe` per joint |
 | `/mrac/mode` | 0 idle, 1 executing, 2 hold |
+| `/mrac/segment` | published by `test_moveit` / `mrac_trainer`: what is running, e.g. `train:17`, `eval:50`, `idle:0` |
 
 Diagnostics are published at 100 Hz (`diag_decimation: 10`).
 
@@ -379,7 +463,7 @@ Diagnostics are published at 100 Hz (`diag_decimation: 10`).
 
 ## Future work
 
-- Regenerate the result plots and run the payload experiments with the current controller.
+- Run the payload experiments with the current controller.
 - Compare against a fixed-gain baseline (PD with gravity compensation, or `JointTrajectoryController`) on the same pose loop.
 - Move from simulation to hardware through the same `ros2_control` interfaces.
 - Pick-and-place with varying payloads.

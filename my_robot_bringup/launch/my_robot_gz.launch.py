@@ -14,6 +14,8 @@ Arguments:
   payload_mass:=0.5   payload mass in kg
   headless:=true      run Gazebo without its GUI
   use_rviz:=false     do not start RViz
+  record_camera:=true use worlds/recording.sdf (adds a fixed camera) and
+                      publish its images on the ROS topic /rec_cam
 """
 
 import os
@@ -53,6 +55,7 @@ def generate_launch_description():
     initial_pos_file = os.path.join(pkg_desc, "urdf", "initial_positions.yaml")
     rviz_config = os.path.join(pkg_bringup, "config", "my_robot_moveit.rviz")
     mrac_params_file = os.path.join(pkg_mrac, "robust_direct_mrac_params.yaml")
+    recording_world = os.path.join(pkg_bringup, "worlds", "recording.sdf")
 
     # ── Launch arguments ───────────────────────────────────────────────────
     payload_mass_arg = DeclareLaunchArgument(
@@ -67,6 +70,11 @@ def generate_launch_description():
     )
     use_rviz_arg = DeclareLaunchArgument(
         "use_rviz", default_value="true", description="Start RViz"
+    )
+    record_camera_arg = DeclareLaunchArgument(
+        "record_camera",
+        default_value="false",
+        description="true = world with a fixed camera, images on /rec_cam",
     )
 
     moveit_delay_arg = DeclareLaunchArgument(
@@ -124,9 +132,13 @@ def generate_launch_description():
         launch_arguments={
             "gz_args": PythonExpression(
                 [
-                    "'-r -s empty.sdf' if '",
+                    "('-r -s ' if '",
                     LaunchConfiguration("headless"),
-                    "'.lower() == 'true' else '-r empty.sdf'",
+                    "'.lower() == 'true' else '-r ') + ('",
+                    recording_world,
+                    "' if '",
+                    LaunchConfiguration("record_camera"),
+                    "'.lower() == 'true' else 'empty.sdf')",
                 ]
             ),
             "on_exit_shutdown": "true",
@@ -140,6 +152,17 @@ def generate_launch_description():
         name="gz_bridge",
         arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
         parameters=[{"use_sim_time": True}],
+        output="screen",
+    )
+
+    # Camera image bridge gz -> ROS (only with record_camera:=true)
+    camera_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="camera_bridge",
+        arguments=["/rec_cam@sensor_msgs/msg/Image[gz.msgs.Image"],
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(LaunchConfiguration("record_camera")),
         output="screen",
     )
 
@@ -262,11 +285,13 @@ def generate_launch_description():
             payload_mass_arg,
             headless_arg,
             use_rviz_arg,
+            record_camera_arg,
             moveit_delay_arg,
             rviz_delay_arg,
             rsp_node,
             gz_sim,
             gz_bridge,
+            camera_bridge,
             spawn_robot,
             after_spawn_load_jsb,
             after_jsb_load_arm,

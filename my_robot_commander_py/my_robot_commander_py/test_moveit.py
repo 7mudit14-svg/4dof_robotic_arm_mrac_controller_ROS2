@@ -15,6 +15,7 @@ Settings are ROS parameters (defaults in brackets):
   vel_scale       [0.05]   MoveIt velocity scaling
   acc_scale       [0.05]   MoveIt acceleration scaling
   result_timeout  [120.0]  per-move timeout [s] (plan + execute)
+  pose_tolerance  [0.01]   how close to the named pose MoveIt's goal must be [rad]
 
 Example:
   ros2 run my_robot_commander_py test_moveit --ros-args -p n_loops:=2 -p dwell_sec:=30.0
@@ -30,7 +31,8 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import MotionPlanRequest, Constraints, JointConstraint
-from std_msgs.msg import Bool, Float64MultiArray
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool, Float64MultiArray, String
 
 POSES = {
     "home":   {"joint1":  0.0,    "joint2": 0.0,    "joint3": 0.0,    "joint4": 0.0},
@@ -39,6 +41,14 @@ POSES = {
 }
 
 LOOP_SEQUENCE = ["home", "pose_1", "pose_2", "home"]
+
+# Physical joint limits from arm.xacro [rad]. Goals are kept inside them.
+JOINT_LIMITS = {
+    "joint1": (-3.14, 3.14),
+    "joint2": (0.0, 2.5),
+    "joint3": (0.0, 2.5),
+    "joint4": (-3.14, 3.14),
+}
 JOINT_NAMES   = ["joint1", "joint2", "joint3", "joint4"]
 
 
@@ -78,10 +88,21 @@ class MRACLoopTrainer(Node):
         self.vel_scale      = self.declare_parameter("vel_scale", 0.05).value
         self.acc_scale      = self.declare_parameter("acc_scale", 0.05).value
         self.result_timeout = self.declare_parameter("result_timeout", 120.0).value
+        # Kept tight so every loop goes to the same poses and results are
+        # comparable.
+        self.pose_tolerance = self.declare_parameter("pose_tolerance", 0.01).value
 
         # Single action client — plan + execute
         self._move_client = ActionClient(self, MoveGroup, "/move_action")
         self._robust_pub  = self.create_publisher(Bool, "/mrac/robust_enable", 10)
+        # What the arm is currently doing, as "<kind>:<number>", e.g.
+        # "eval_loop:2", "train:17", "eval:50", "idle:0". mrac_record uses it
+        # to split a recording into segments. Latched, so a recorder started
+        # later still sees the current value.
+        self._segment_pub = self.create_publisher(
+            String, "/mrac/segment",
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
 
         # e_model = q − q_m (reference model),  e_traj = q − q_d (planned path)
         self._lock = threading.Lock()
@@ -124,6 +145,23 @@ class MRACLoopTrainer(Node):
                 "traj_last": list(self.traj_stats.last),
             }
 
+    def announce(self, kind, number=0):
+        msg = String()
+        msg.data = f"{kind}:{int(number)}"
+        self._segment_pub.publish(msg)
+
+    def run_eval_loop(self, dwell_sec=None, vel_scale=None, acc_scale=None):
+        """One Home → Pose 1 → Pose 2 → Home cycle. Returns the number of successful moves."""
+        dwell_sec = self.dwell_sec if dwell_sec is None else dwell_sec
+        ok_count = 0
+        for pose_name in LOOP_SEQUENCE:
+            if self.move_to(pose_name, vel_scale=vel_scale, acc_scale=acc_scale):
+                ok_count += 1
+                self.dwell(dwell_sec)
+            else:
+                self.dwell(2.0)  # short recovery dwell
+        return ok_count
+
     def _set_robust_mode(self, enabled):
         msg = Bool()
         msg.data = bool(enabled)
@@ -142,8 +180,12 @@ class MRACLoopTrainer(Node):
             jc = JointConstraint()
             jc.joint_name       = jname
             jc.position         = float(target[jname])
-            jc.tolerance_above  = 0.1
-            jc.tolerance_below  = 0.1
+            # The tolerance window never reaches beyond a physical joint stop
+            # (home sits exactly on the lower stop of joints 2 and 3): a goal
+            # past the stop cannot be reached and makes the adaptation wind up.
+            lower, upper = JOINT_LIMITS[jname]
+            jc.tolerance_above  = max(0.0, min(float(self.pose_tolerance), upper - jc.position))
+            jc.tolerance_below  = max(0.0, min(float(self.pose_tolerance), jc.position - lower))
             jc.weight           = 1.0
             constraints.joint_constraints.append(jc)
 
@@ -247,22 +289,18 @@ def main(args=None):
 
     for loop_idx in range(trainer.n_loops):
         print(f"\n{'─'*55}\n  Loop {loop_idx+1} / {trainer.n_loops}\n{'─'*55}")
-        loop_ok = 0
         trainer.reset_stats()
-
-        for pose_name in LOOP_SEQUENCE:
-            ok = trainer.move_to(pose_name)
-            total_moves += 1
-            if ok:
-                total_ok += 1
-                loop_ok  += 1
-                trainer.dwell(trainer.dwell_sec)
-            else:
-                trainer.dwell(2.0)  # short recovery dwell
+        trainer.announce("eval_loop", loop_idx + 1)
+        loop_ok = trainer.run_eval_loop()
+        total_moves += len(LOOP_SEQUENCE)
+        total_ok += loop_ok
 
         trainer.print_stats(
             f"Loop {loop_idx+1}/{trainer.n_loops} — {loop_ok}/{len(LOOP_SEQUENCE)} moves OK   [rad]"
         )
+
+    trainer.announce("idle")
+    trainer.dwell(0.5)
 
     print("\n" + "=" * 65)
     print(f"  Done — {total_ok}/{total_moves} moves successful")

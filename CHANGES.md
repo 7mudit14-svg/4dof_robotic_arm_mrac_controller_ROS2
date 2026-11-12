@@ -87,12 +87,18 @@ The first implementation, `mrac_controller/src/mrac_controller.cpp`, is kept and
 | 7.3 | Unit tests of the maths: Lyapunov equation, reference model, sampler, basis and masks, saturation, a closed-loop arm model, save/load. | `mrac_controller/test/test_mrac_core.cpp` |
 | 7.4 | Launch arguments `headless:=true` (Gazebo without GUI) and `use_rviz:=false`. | `my_robot_gz.launch.py` |
 | 7.5 | New topic `/mrac/tau` (commanded torque). `/mrac/traj_error` now reports `q − q_d`. | plugin |
+| 7.6 | Evaluation checkpoints during training: `mrac_trainer -p eval_at:="[0, 50, 200]"` runs the evaluation loop before training and after 50 and 200 random poses. | `mrac_trainer.py` |
+| 7.7 | Session recorder: records the `/mrac/*` topics, splits the session into segments (training pose n, evaluation n) and keeps the exact mean and max error of each segment. | `my_robot_commander_py/.../mrac_record.py` |
+| 7.8 | Plot script: tracking error, gains and weights over the session; mean and max error per training pose; evaluation error before/after training; summary tables. | `my_robot_commander_py/.../mrac_plot.py` |
+| 7.9 | Topic `/mrac/segment` (`train:17`, `eval:50`, `eval_loop:2`, `idle:0`), published by `test_moveit` and `mrac_trainer` so a recording can be split. | `test_moveit.py` |
+| 7.10 | Launch argument `record_camera:=true`: world with a fixed camera whose images are bridged to `/rec_cam`; the recorder saves the frames and the plot script can turn them into GIFs. | `my_robot_bringup/worlds/recording.sdf`, launch file |
 
 ## 8. Scripts and configuration
 
 | # | File | Change |
 |---|---|---|
 | 8.1 | `test_moveit.py` | Settings are ROS parameters (`n_loops`, `dwell_sec`, `vel_scale`, `acc_scale`, `adaptive_mode`, `result_timeout`) instead of constants in the file. Prints max, mean and final error per joint for each loop. Defaults are unchanged (4 loops, 10 s hold, scaling 0.05). |
+| 8.1b | `test_moveit.py` | New parameter `pose_tolerance` (0.01 rad; the goal tolerance was a fixed 0.1 rad), so every loop goes to the same poses. The tolerance window is clipped at the physical joint limits (see 9.4). |
 | 8.2 | `mrac_monitor.py` | Updated for the 7-term basis and the new `/mrac/K_hat` layout `[Kp, Kd, Kr]` per joint; plots `Kd` alongside `Kp`. |
 | 8.3 | `robust_direct_mrac_params.yaml` | Rewritten for the plugin (top-level key `mrac_arm_controller`), with new parameters and corrected comments. |
 | 8.4 | `my_robot_gz.launch.py` | Spawns the plugin with its parameter file; removed the 35 s timer and the unused `gamma`, `kp`, `kd` arguments. |
@@ -112,6 +118,8 @@ These appeared while testing the new controller in Gazebo.
 | 9.2 | The wrist went unstable after some minutes of adaptation. | The viscous basis term `q̇` and the velocity gain `Kd` both adapted on the same signal, and their sum grew past the stable limit. | Removed the `q̇` terms from the basis (2.4); per-joint `W_max`. |
 | 9.3 | Joints 1 and 4 held a small constant offset at rest. | With no gravity terms and zero velocity, nothing in their adaptation acted on a steady error. | Added the constant term `1` to the basis. |
 
+| 9.4 | A 0.15 rad error spike on joint 3 when leaving home, appearing in some loops only. | Home is exactly on the lower stop of joints 2 and 3. With a ±0.1 rad goal tolerance and MoveIt's limits widened to −0.05, MoveIt sometimes chose a home goal of about −0.04 rad, beyond the stop. The controller pushed against the stop for the whole hold, the offset weight wound up, and the arm overshot when it left. | `test_moveit` clips its goal tolerance at the physical joint limits and uses a tight tolerance (8.1b). MoveIt's widened limit is kept, because a start state resting a hair below the stop must not be rejected; setting it to exactly 0 made MoveIt refuse most plans (`START_STATE_INVALID`). |
+
 ## 10. Environment fix (WSL 2)
 
 | Symptom | Cause | Fix |
@@ -121,34 +129,45 @@ These appeared while testing the new controller in Gazebo.
 
 ## 11. Measured results
 
-`test_moveit` with default settings: four Home → Pose 1 → Pose 2 → Home loops, 10 s holds, scaling 0.05, no payload, weights starting from initial values, Gazebo headless. 16 of 16 moves completed. Errors in rad.
+One recorded session, starting from zero weights and the initial gains, no payload, Gazebo headless: evaluation loop → 50 random training poses → evaluation loop → 150 more training poses → evaluation loop. The evaluation loop is Home → Pose 1 → Pose 2 → Home with 10 s holds and scaling 0.05. 199 of 200 training moves and 12 of 12 evaluation moves succeeded. Errors in rad. Graphs are in the README and in `docs/assets/`; the tables are also in `docs/assets/results_summary.md`.
 
-| Metric | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
+| Mean \|e\| on the evaluation loop | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
 |---|---|---|---|---|
-| First version — final e | 0.0100 | 0.0339 | 0.0055 | 0.0151 |
-| Current — final e | 0.0002 | 0.0003 | 0.0002 | 0.0001 |
-| First version — mean \|e\| | 0.0075 | 0.0342 | 0.0158 | 0.0049 |
-| Current — mean \|e\|, loop 4 | 0.0044 | 0.0019 | 0.0029 | 0.0023 |
-| Current — max \|e\|, loop 1 | 0.0077 | 0.0484 | 0.1113 | 0.0046 |
-| Current — max \|e\|, loop 4 | 0.0106 | 0.0134 | 0.0080 | 0.0063 |
+| First version (earlier README) | 0.0075 | 0.0342 | 0.0158 | 0.0049 |
+| Current, before training | 0.0018 | 0.0032 | 0.0020 | 0.0009 |
+| Current, after 50 training poses | 0.0023 | 0.0015 | 0.0020 | 0.0005 |
+| Current, after 200 training poses | 0.0017 | 0.0014 | 0.0015 | 0.0012 |
+
+| Max \|e\| on the evaluation loop | Joint 1 | Joint 2 | Joint 3 | Joint 4 |
+|---|---|---|---|---|
+| First version (earlier README) | 0.0322 | 0.1994 | 0.1544 | 0.0245 |
+| Current, before training | 0.0091 | 0.0178 | 0.0094 | 0.0028 |
+| Current, after 50 training poses | 0.0079 | 0.0055 | 0.0089 | 0.0059 |
+| Current, after 200 training poses | 0.0094 | 0.0063 | 0.0057 | 0.0043 |
+
+What the session shows:
+
+- Training helps the gravity-loaded joints on the evaluation loop: joint 2's mean error halves and its peak drops to about a third; joint 3's peak drops from 0.0094 to 0.0057.
+- Joint 1 does not change. Joint 4 is slightly worse after training (around 0.001 rad).
+- On the random training poses themselves the error stays roughly level over the 200 poses; only joint 2 shows a clear drop towards the end.
+- The gains do not settle to fixed values within 200 poses. The wrist's velocity gain sits at its bound for most of the session.
 
 Also checked:
 
 - Unit tests: 12 of 12 pass.
 - Action server: normal goal, cancel mid-motion, preemption, and three kinds of malformed goal all behave as described in section 6.
-- Training node: 8 of 8 random poses reached, weights saved.
-- Reload after restart: first-loop error on joint 3 improved (max 0.111 → 0.019, mean 0.0069 → 0.0033) and joint 2's mean improved (0.0049 → 0.0035); joint 2's max was slightly worse (0.048 → 0.057). Single run.
-
-Results that are not clean improvements: joint 3 had a brief 0.147 rad peak in loop 2; joints 1 and 4 do not improve across loops.
+- An earlier 500-pose session (before fix 9.4) completed 500 of 500 training moves. Its last evaluation was spoiled by the hard-stop problem, and joint 1's error rose over its last 150 poses with that joint's velocity gain at its bound, so longer training is not simply better.
 
 ## 12. Known open issues
 
 | Issue | Status |
 |---|---|
 | `gripper_controller` fails to activate: `gripper_right_finger_joint` has no command interface. | Not fixed. The arm is unaffected. |
-| Plot images and demo GIFs in `docs/assets/` are from the first version. | Not regenerated. |
+| The demo GIFs in `docs/assets/` are from the first version. | A recording of the current controller is to be added. The plots were regenerated. |
+| Joint 1 does not benefit from training, and in a 500-pose session its gains drifted to their bounds. | Open. Leakage (`sigma`) toward the initial gains is the next thing to try; it is off by default. |
+| In one 90-minute session the ROS `/clock` topic stopped being delivered after 25 minutes (WSL 2). The run itself continued normally. | `mrac_plot` rebuilds the time axis from the sample count when this happens. Cause not investigated. |
 | No run with a payload has been done on the current controller. | Open. |
-| The constant basis term absorbs part of the gravity load on joints 2 and 3, which limits how well saved weights transfer to new poses. | Open; removing the constant from joints 2 and 3 is the next experiment. |
+| The constant basis term can absorb part of the gravity load on joints 2 and 3. This was clear after training on only 8 poses; after 200 varied poses the constant weights ended near zero and the load sat on the gravity terms. | Open; removing the constant from joints 2 and 3 is still worth testing. |
 | `MRAC_TUNING_GUIDE.md` and `scripts/mrac_tuning_workflow.sh` describe the first version. | Not updated. |
 | `pose_2` joint 3 is 2.0133 in `test_moveit.py` and 2.1133 in the SRDF. | Not changed. |
 | `my_robot_moveit_config/launch/move_group.launch.py` uses an attribute that does not exist on Jazzy. It is not used by the main launch. | Not fixed. |
@@ -168,6 +187,11 @@ mrac_controller/src/mrac_controller_plugin.cpp
 mrac_controller/mrac_plugin.xml
 mrac_controller/test/test_mrac_core.cpp
 my_robot_commander_py/my_robot_commander_py/mrac_trainer.py
+my_robot_commander_py/my_robot_commander_py/mrac_record.py
+my_robot_commander_py/my_robot_commander_py/mrac_plot.py
+my_robot_bringup/worlds/recording.sdf
+docs/assets/  (new plots: eval_*.png, train_*.png, mrac_W_gravity.png, mrac_tau.png, results_summary.md;
+               regenerated: mrac_e_mrac.png, mrac_Kx.png, mrac_Kr.png, mrac_W_hat.png, mrac_lyapunov.png)
 ```
 
 Modified:
@@ -177,6 +201,7 @@ README.md
 mrac_controller/CMakeLists.txt
 mrac_controller/package.xml
 mrac_controller/src/robust_direct_mrac_params.yaml
+my_robot_bringup/CMakeLists.txt
 my_robot_bringup/config/ros2_controllers.yaml
 my_robot_bringup/launch/my_robot_gz.launch.py
 my_robot_bringup/scripts/check_mrac_system.py
@@ -190,4 +215,4 @@ my_robot_commander_py/my_robot_commander_py/mrac_integration_test.py
 my_robot_commander_py/my_robot_commander_py/mrac_system_test.py
 ```
 
-Unchanged: the URDF/Xacro, the SRDF and MoveIt configuration, and `mrac_controller/src/mrac_controller.cpp`.
+Unchanged apart from one comment in `my_robot_moveit_config/config/joint_limits.yaml`: the URDF/Xacro, the SRDF and MoveIt configuration, and `mrac_controller/src/mrac_controller.cpp`.

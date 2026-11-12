@@ -7,13 +7,27 @@ MoveIt, so the controller's weights are excited over the whole workspace
 instead of along one path. When finished it asks the controller to save
 its weights (K̂x, K̂r, Ŵ) to file.
 
+It can also run the evaluation loop (Home → Pose 1 → Pose 2 → Home) at
+chosen points during training, to measure how accuracy on the evaluation
+path changes with the amount of training:
+
+  ros2 run my_robot_commander_py mrac_trainer --ros-args \\
+      -p n_poses:=500 -p eval_at:="[0, 50, 500]"
+
+runs one evaluation loop before any training, one after 50 random poses
+and one after 500. Record the session with mrac_record and plot it with
+mrac_plot.
+
 Parameters (defaults in brackets):
   n_poses         [20]     number of random targets
-  dwell_sec       [3.0]    hold at each target [s]
+  dwell_sec       [3.0]    hold at each random target [s]
   vel_min/vel_max [0.05 / 0.3]   range of the MoveIt velocity scaling
   seed            [0]      random seed (0 = different every run)
   save_weights    [true]   call ~/save_weights at the end
   min_height      [0.20]   keep elbow and tool at least this high [m]
+  eval_at         [[-1]]   training-pose counts at which to run an evaluation loop
+  eval_dwell_sec  [10.0]   hold at each pose of an evaluation loop [s]
+  eval_vel_scale  [0.05]   velocity/acceleration scaling of an evaluation loop
 
 Reload the saved weights later with
   ros2 service call /mrac_arm_controller/load_weights std_srvs/srv/Trigger
@@ -27,7 +41,7 @@ import random
 import rclpy
 from std_srvs.srv import Trigger
 
-from my_robot_commander_py.test_moveit import MRACLoopTrainer, JOINT_NAMES
+from my_robot_commander_py.test_moveit import MRACLoopTrainer, JOINT_NAMES, LOOP_SEQUENCE
 
 # Sampling ranges [rad], inside the URDF joint limits with a margin.
 RANGES = {
@@ -69,6 +83,9 @@ def main(args=None):
     seed       = node.declare_parameter("seed", 0).value
     do_save    = node.declare_parameter("save_weights", True).value
     min_height = node.declare_parameter("min_height", 0.20).value
+    eval_at    = {int(n) for n in node.declare_parameter("eval_at", [-1]).value if n >= 0}
+    eval_dwell = node.declare_parameter("eval_dwell_sec", 10.0).value
+    eval_scale = node.declare_parameter("eval_vel_scale", 0.05).value
     dwell = node.dwell_sec
 
     rng = random.Random(seed if seed else None)
@@ -79,11 +96,24 @@ def main(args=None):
     print(f"  Targets  : {n_poses}")
     print(f"  Dwell    : {dwell:.1f}s per target")
     print(f"  Speed    : velocity scaling {vel_min} – {vel_max}")
+    if eval_at:
+        print(f"  Eval at  : {sorted(eval_at)} training poses")
     print("=" * 65 + "\n")
 
+    def evaluate(after):
+        node.announce("eval", after)
+        node.reset_stats()
+        ok = node.run_eval_loop(dwell_sec=eval_dwell, vel_scale=eval_scale, acc_scale=eval_scale)
+        node.print_stats(
+            f"Evaluation after {after} training poses — {ok}/{len(LOOP_SEQUENCE)} moves OK   [rad]"
+        )
+
     ok_count = 0
-    node.reset_stats()
-    for k in range(n_poses):
+    for k in range(n_poses + 1):
+        if k in eval_at:
+            evaluate(k)
+        if k == n_poses:
+            break
         target = sample_target(rng, min_height)
         scale = rng.uniform(vel_min, vel_max)
         label = f"random {k+1}/{n_poses}"
@@ -92,13 +122,14 @@ def main(args=None):
             + ", ".join(f"{j}={target[j]:+.2f}" for j in JOINT_NAMES)
             + f"  speed={scale:.2f}"
         )
+        node.announce("train", k + 1)
         if node.move_to(target, label=label, vel_scale=scale, acc_scale=scale):
             ok_count += 1
             node.dwell(dwell)
         else:
             node.dwell(1.0)
 
-    node.print_stats(f"Training run — {ok_count}/{n_poses} moves OK   [rad]")
+    print(f"\n  Training — {ok_count}/{n_poses} random moves OK")
 
     if do_save:
         client = node.create_client(Trigger, "/mrac_arm_controller/save_weights")
@@ -106,12 +137,14 @@ def main(args=None):
             future = client.call_async(Trigger.Request())
             rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
             if future.done() and future.result() is not None:
-                print(f"\n  {future.result().message}")
+                print(f"  {future.result().message}")
             else:
-                print("\n  save_weights did not answer")
+                print("  save_weights did not answer")
         else:
-            print("\n  save_weights service not available — weights were NOT saved")
+            print("  save_weights service not available — weights were NOT saved")
 
+    node.announce("idle")
+    node.dwell(0.5)
     node.destroy_node()
     rclpy.shutdown()
 
