@@ -1,109 +1,101 @@
 # robust_direct_mrac_params.yaml
 # ════════════════════════════════════════════════════════════════════════════
-# Parameters for: robust_mrac_controller (mrac_controller.cpp)
+# Parameters of the MRAC ros2_control controller `mrac_arm_controller`
+# (plugin mrac_controller/MracController, maths in include/mrac_controller/mrac_core.hpp).
+# Passed to the controller by the spawner (--param-file) in my_robot_gz.launch.py.
 #
-# WHAT THE PROGRAMMER SETS:
-#   wn, zeta       — reference model bandwidth and damping (Am/Bm/P auto-computed)
-#   sign_b         — sign of the input gain b; +1.0 for revolute effort joints
-#   gamma_Kx/Kr    — direct MRAC adaptation rates (§17.3)
-#   Khat_x/r_init  — initial adaptive gains, one value per joint (4 values each)
-#   robust_enabled — enables §19.2 robust term u_ad = −Ŵᵀ·α(x)
-#   gamma_W        — robust weight adaptation rate (§19.2)
-#   sigma          — σ-modification coefficient applied to ‖K̂_x‖ (see below)
+# Control law      τ = K̂x·[q; q̇] + K̂r·r − Ŵᵀ·α(q, q̇)
+# Adaptation       s    = sign(b)·BᵀPe        (per joint: p12·e + p22·ė)
+#                  K̂x' = −γ_Kx · s · [q; q̇]ᵀ − σ (K̂x − K̂x_init)
+#                  K̂r' = −γ_Kr · s · rᵀ       − σ (K̂r − K̂r_init)   [executing only]
+#                  Ŵ'  =  γ_W  · α · s         − σ_W (Ŵ − Ŵ_init)
+# Basis α (7)      [1, sin(q2), sin(q2+q3), tanh(q̇1)..tanh(q̇4)]
 #
-# RUNTIME TOGGLE (no restart needed):
-#   ros2 topic pub /mrac/robust_enable std_msgs/msg/Bool "{data: true}"
+# The controller is designed to run at 1 kHz (controller_manager update_rate
+# in my_robot_bringup/config/ros2_controllers.yaml). The gain bounds below
+# keep the light joints (waist, wrist) stable at that rate.
+#
+# Runtime:
 #   ros2 topic pub /mrac/robust_enable std_msgs/msg/Bool "{data: false}"
+#   ros2 service call /mrac_arm_controller/save_weights std_srvs/srv/Trigger
+#   ros2 service call /mrac_arm_controller/load_weights std_srvs/srv/Trigger
 # ════════════════════════════════════════════════════════════════════════════
 
-robust_mrac_controller:
+mrac_arm_controller:
   ros__parameters:
 
-    # ── Reference model ───────────────────────────────────────────────────
-    # G(s) = wn² / (s² + 2·ζ·wn·s + wn²)
-    # Am, Bm, P are computed automatically from wn and zeta.
-    # The same model is shared across all 4 joints (independent state columns).
-    #
-    # wn   — natural frequency [rad/s]. Sets how fast the reference trajectory
-    #        responds to a new goal. Must stay below the arm's physical bandwidth.
-    #        At wn=3 the reference model settles in ~1-2 s — suitable for slow
-    #        deliberate motions. Increase to 5-8 to track faster MoveIt paths,
-    #        but verify joint2 (highest gravity load) does not saturate at ±250 Nm.
-    #
-    # zeta — damping ratio. 0.76 gives a slightly underdamped response
-    #        (small overshoot) which helps the adaptive gains stay active.
-    #        Use 1.0 for critically damped (no overshoot, slower convergence).
+    joints: [joint1, joint2, joint3, joint4]
+
+    # ── Reference model  G(s) = wn² / (s² + 2·ζ·wn·s + wn²) ───────────────
+    # Am, Bm and P (solution of P·Am + Amᵀ·P = −I) are computed from these.
+    # The trajectory is pre-compensated, so wn does not delay the motion; it
+    # sets how stiffly errors are pulled back onto the reference.
     wn:   3.0
     zeta: 0.76
 
-    # ── Input gain sign ───────────────────────────────────────────────────
-    # sign(b) from §17.3. Must be +1.0 for revolute joints using an effort
-    # (torque) interface where positive torque produces positive acceleration.
+    # sign of the input gain b: +1 when positive torque gives positive acceleration.
     sign_b: 1.0
 
-    # ── Direct MRAC adaptation rates (§17.3) ─────────────────────────────
-    # K̂_x and K̂_r are each a 4-element vector — one scalar gain per joint.
-    #
-    # Control law per joint i:
-    #   u_mrac[i] = K̂_x[i] · q[i]  +  K̂_r[i] · r[i]
-    #
-    # Adaptation laws (discrete, DT = 0.001 s):
-    #   ΔK̂_x[i] = (−γ_Kx · sign(b) · e[i] · q[i]  −  σ · K̂_x[i]) · DT
-    #   ΔK̂_r[i] = (−γ_Kr · sign(b) · e[i] · r[i]) · DT   [EXECUTING only]
-    #
-    # γ_Kx / γ_Kr — step size of the gradient update each millisecond.
-    #   Too small (< 0.5): gains adapt so slowly that tracking error persists
-    #     for many seconds; the arm drifts under gravity.
-    #   Too large (> 10.0): gains oscillate, torque becomes noisy.
-    #   Joint 2 (shoulder) is given a higher rate (5.0) to quickly overcome 
-    #   heavy gravity loads and prevent sagging during motion starts.
-    gamma_Kx: [2.0, 5.0, 2.0, 2.0]
-    gamma_Kr: [2.0, 2.0, 2.0, 2.0]
+    # true  → each joint has its own Kp, Kd, Kr (diagonal entries of the matrices).
+    # false → the full 4×8 K̂x and 4×4 K̂r adapt, including cross-joint terms.
+    decentralized: true
 
-    # Initial values for K̂_x and K̂_r — 4 values, one per joint [j0,j1,j2,j3].
-    # Signs: K̂_x_init negative (stabilising position feedback),
-    #        K̂_r_init positive (positive feedforward to reference).
-    # Magnitude: roughly proportional to the gravity torque at mid-range.
-    # Joint1 (base) and joint2 (shoulder) carry more load — larger magnitude.
-    Khat_x_init: [-10.0, -15.0, -10.0, -5.0]
-    Khat_r_init: [ 10.0,  15.0,  10.0,  5.0]
+    # ── Adaptation rates, one value per joint ─────────────────────────────
+    # s is weighted by P, so it is roughly 10–20× smaller than the raw error;
+    # that is why these rates are larger than in the old scalar law.
+    gamma_Kx: [200.0, 200.0, 200.0, 200.0]
+    gamma_Kr: [200.0, 200.0, 200.0, 200.0]
 
-    # Projection bounds — hard clamp on |K̂_x[i]| and |K̂_r[i]|.
-    # Prevents unbounded parameter drift (Barbalat §17.4).
-    # 300 Nm is well above any realistic single-joint gravity torque for this arm.
-    Kx_max: 300.0
+    # ── Initial gains, one value per joint ────────────────────────────────
+    # Kp_init, Kd_init multiply q and q̇ (negative = stabilising).
+    # Kr_init multiplies r. Kp_init = −Kr_init gives zero torque at q = r.
+    Kp_init: [-10.0, -15.0, -10.0, -5.0]
+    Kd_init: [ -1.0,  -5.0,  -2.0,  0.0]
+    Kr_init: [ 10.0,  15.0,  10.0,  5.0]
+
+    # Projection bounds, one value per joint: |Kp_i| ≤ Kp_max, |Kd_i| ≤ Kd_max.
+    # A sampled loop is only stable while roughly
+    #     |Kp|·T²/J + |Kd|·T/J < 1     (T = control period, J = joint inertia)
+    # The waist (arm upright, J ≈ 0.012 kg·m²) and the wrist (J ≈ 0.002 kg·m²)
+    # are very light, so their bounds are small. Do not raise Kd_max of
+    # joint1 / joint4 without also raising the control rate.
+    Kp_max: [60.0, 300.0, 150.0, 15.0]
+    Kd_max: [ 5.0,  50.0,  15.0,  0.3]
     Kr_max: 300.0
 
-    # ── Robust uncertainty compensation (§19.2) ───────────────────────────
-    # When enabled, adds u_ad[i] = −Ŵ[:,i]ᵀ · α(q,q̇) to the torque command.
-    # Ŵ is a 24×4 matrix. Each column learns the structured uncertainty
-    # (gravity, coupling, friction) for one joint via the basis α(q,q̇).
-    # Set to false during initial tuning to isolate the direct MRAC behaviour.
+    # ── Robust term u_ad = −Ŵᵀ·α(q, q̇) ───────────────────────────────────
+    # Ŵ is 7×4; each joint only uses the basis terms that act on it:
+    #   every joint : constant offset, Coulomb friction tanh(q̇_i)
+    #   joint2      : sin(q2), sin(q2+q3)        (gravity)
+    #   joint3      : sin(q2+q3)                 (gravity)
+    # Viscous friction (∝ q̇) is covered by the velocity gain Kd, so it is
+    # not repeated in the basis.
     robust_enabled: true
+    gamma_W: [400.0, 400.0, 400.0, 400.0]
+    # Bound on ‖Ŵ[:,i]‖ per joint, sized to the torque each joint can need.
+    W_max: [3.0, 50.0, 30.0, 0.5]
 
-    # γ_W — adaptation rate for Ŵ.
-    # The update is ΔŴ[:,i] = (γ_W · (eᵀ·P·Bm)[i] · α  −  σ_W · Ŵ[:,i]) · DT.
-    # eTpB is weighted by P·Bm (uses true Bm=[0,wn²]ᵀ), so the effective
-    # step size scales with wn². If you increase wn, consider reducing γ_W.
-    gamma_W: [1.0, 2.0, 1.0, 1.0]
+    # ── Leakage (σ-modification) ──────────────────────────────────────────
+    # Pulls the estimates back toward their initial (or loaded) values, not
+    # toward zero. 0.0 disables it; the projection bounds still apply.
+    sigma:   0.0
+    sigma_W: 0.0
 
-    # Norm bound on each column of Ŵ — ‖Ŵ[:,i]‖ ≤ W_max.
-    # Ball projection (scales the whole column) is smoother than element-wise
-    # clamping and preserves the direction of the learned weight vector.
-    W_max: 50.0
+    # ── Torque limits [Nm] — must match the URDF effort limits ────────────
+    # Adaptation of a joint pauses while its torque is saturated.
+    tau_limit: [150.0, 150.0, 100.0, 50.0]
 
-    # ── σ-modification (§17.4 robustness) ────────────────────────────────
-    # Adds −σ · K̂_x[i] to the K̂_x update each step, and similarly for K̂_r and Ŵ.
-    # This penalises the MAGNITUDE of the estimate (standard leakage), which is
-    # the correct Ioannou & Sun formulation. The effect is a weak restoring force
-    # toward zero that prevents slow parameter drift when e ≈ 0 (e.g. during 
-    # sensor noise or at a converged hold pose).
-    #
-    # sigma — leakage for adaptive gains K̂_x and K̂_r.
-    # sigma = 0.0  → pure gradient descent, no regularisation.
-    # sigma = 0.01 → light regularisation; suitable starting point.
-    sigma: 0.01
+    # ── Trajectory goals ──────────────────────────────────────────────────
+    # A goal succeeds once every joint is within goal_tolerance [rad] of the
+    # final point; it is aborted if that takes longer than
+    # goal_time_tolerance [s] after the planned end time.
+    goal_tolerance: 0.05
+    goal_time_tolerance: 5.0
 
-    # sigma_W — leakage for robust weights Ŵ. Tuned separately due to higher
-    # dimensionality (22 basis functions).
-    sigma_W: 0.005
+    # Publish the /mrac/* diagnostics every N-th control cycle (10 → 100 Hz).
+    diag_decimation: 10
+
+    # ── Saved weights ─────────────────────────────────────────────────────
+    # Empty weights_file means ~/.ros/mrac_weights.yaml.
+    weights_file: ""
+    load_weights_on_activate: false

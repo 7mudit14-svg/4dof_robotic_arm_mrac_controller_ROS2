@@ -40,7 +40,7 @@ class MRACDiagnostic(Node):
             print("    ✓ MRAC action server is RUNNING\n")
         else:
             print("    ✗ MRAC action server NOT FOUND or TIMEOUT\n")
-            print("    DIAGNOSIS: The robust_mrac_controller node may not be running.")
+            print("    DIAGNOSIS: The mrac_arm_controller controller may not be running.")
             print("    Try: ros2 node list | grep mrac")
             print("    Try: ros2 topic list | grep mrac\n")
             return False
@@ -63,7 +63,7 @@ class MRACDiagnostic(Node):
 
         required = {
             "/joint_states": "Joint state feedback",
-            "/arm_effort_controller/commands": "Torque commands",
+            "/mrac/tau": "Torque commands",
             "/mrac/error": "MRAC diagnostics",
         }
 

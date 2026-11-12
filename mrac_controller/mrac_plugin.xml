@@ -1,0 +1,10 @@
+<library path="mrac_controller_plugin">
+  <class name="mrac_controller/MracController"
+         type="mrac_controller::MracController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Robust direct MRAC (model reference adaptive control) effort controller for the 4-DOF arm.
+      Serves FollowJointTrajectory and adapts feedback/feedforward gains and uncertainty weights online.
+    </description>
+  </class>
+</library>

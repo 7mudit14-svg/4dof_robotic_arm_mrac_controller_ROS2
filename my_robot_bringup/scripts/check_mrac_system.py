@@ -38,7 +38,7 @@ def main():
     print("\n[2] Checking ROS topics...")
     required_topics = [
         "/joint_states",
-        "/arm_effort_controller/commands",
+        "/mrac/tau",
         "/mrac/K_hat",
         "/mrac/error",
         "/mrac/lyapunov_V",

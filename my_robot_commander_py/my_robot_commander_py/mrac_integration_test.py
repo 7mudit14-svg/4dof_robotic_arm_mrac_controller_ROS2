@@ -63,7 +63,7 @@ class MRACIntegrationTester(Node):
         # MRAC data subscribers
         self.tau_sub = self.create_subscription(
             Float64MultiArray,
-            "/arm_effort_controller/commands",
+            "/mrac/tau",
             self._tau_callback,
             10,
             callback_group=self.callback_group,
@@ -128,7 +128,7 @@ class MRACIntegrationTester(Node):
 
         required_topics = {
             "/joint_states": "sensor_msgs/JointState",
-            "/arm_effort_controller/commands": "std_msgs/Float64MultiArray",
+            "/mrac/tau": "std_msgs/Float64MultiArray",
             "/mrac/K_hat": "std_msgs/Float64MultiArray",
             "/mrac/error": "std_msgs/Float64MultiArray",
             "/mrac/lyapunov_V": "std_msgs/Float64MultiArray",
@@ -158,12 +158,12 @@ class MRACIntegrationTester(Node):
         print("=" * 70)
 
         required_nodes = [
-            "/robust_mrac_controller",
+            "/mrac_arm_controller",
             "/move_group",
             "/controller_manager",
             "/gz_bridge",
             "/joint_state_broadcaster",
-            "/arm_effort_controller",
+            "/mrac_arm_controller",
         ]
 
         # Give MoveIt time to fully start (it takes time)

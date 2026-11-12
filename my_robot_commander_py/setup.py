@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'test_moveit        = my_robot_commander_py.test_moveit:main',
+            'mrac_trainer       = my_robot_commander_py.mrac_trainer:main',
             'mrac_monitor       = my_robot_commander_py.mrac_monitor:main',
             'mrac_system_test   = my_robot_commander_py.mrac_system_test:main',
             'mrac_integration_test = my_robot_commander_py.mrac_integration_test:main',

@@ -5,7 +5,7 @@ MRAC Monitor — Comprehensive Parameter & Error Plotter
 Subscribes to all MRAC diagnostic topics and produces separate figures:
 
   Figure 1 — MRAC error  e_mrac = q − q_m  (plant vs reference model, driven by r_vec)
-  Figure 2 — Adaptive gains Kx      (K_hat_x per joint)
+  Figure 2 — Adaptive gains Kx      (position gain Kp and velocity gain Kd per joint)
   Figure 3 — Adaptive gains Kr      (K_hat_r per joint)
   Figure 4 — Robust weights W_hat   (‖Ŵ_i‖ norm per joint)
   Figure 5 — Lyapunov function V    (stability check, all joints)
@@ -13,9 +13,9 @@ Subscribes to all MRAC diagnostic topics and produces separate figures:
 
 Topics consumed:
   /mrac/error        Float64MultiArray  [e0,ė0, e1,ė1, e2,ė2, e3,ė3]
-  /mrac/K_hat        Float64MultiArray  [Kx0,Kr0, Kx1,Kr1, ...]
-  /mrac/W_hat        Float64MultiArray  [Ŵ_0(22), Ŵ_1(22), ...]
-  /mrac/lyapunov_V   Float64MultiArray  [V0, V1, V2, V3]
+  /mrac/K_hat        Float64MultiArray  [Kp0,Kd0,Kr0, Kp1,Kd1,Kr1, ...]
+  /mrac/W_hat        Float64MultiArray  [Ŵ_0(7), Ŵ_1(7), ...]
+  /mrac/lyapunov_V   Float64MultiArray  [eᵀPe per joint]  (tracking-error energy)
   /mrac/ref_model    Float64MultiArray  [qm0,q̇m0, qm1,q̇m1, ...]
   /joint_states      sensor_msgs/JointState  (actual joint positions)
 
@@ -48,9 +48,9 @@ import threading
 import time
 import os
 
-# ── Constants must match mrac_controller.cpp ────────────────────────────────
+# ── Constants must match mrac_core.hpp ──────────────────────────────────────
 N_JOINTS = 4
-N_BASIS   = 22
+N_BASIS   = 7
 JOINT_LABELS = [f"joint{i+1}" for i in range(N_JOINTS)]
 
 # Colour palette — one colour per joint
@@ -72,11 +72,13 @@ class MRACMonitor(Node):
         self.e  = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
         self.de = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
 
-        # /mrac/K_hat  — [Kx0,Kr0, Kx1,Kr1, ...]
+        # /mrac/K_hat  — [Kp0,Kd0,Kr0, Kp1,Kd1,Kr1, ...]
+        # Kx holds the position gain Kp, Kd the velocity gain (both are K̂x entries).
         self.Kx = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
+        self.Kd = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
         self.Kr = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
 
-        # /mrac/W_hat  — ‖Ŵ_i‖ norm (22 values per joint)
+        # /mrac/W_hat  — ‖Ŵ_i‖ norm (N_BASIS values per joint)
         self.W_norm = [deque(maxlen=MAX_SAMPLES) for _ in range(N_JOINTS)]
 
         # /mrac/lyapunov_V
@@ -128,8 +130,9 @@ class MRACMonitor(Node):
     def _cb_khat(self, msg: Float64MultiArray):
         with self._lock:
             for i in range(N_JOINTS):
-                self.Kx[i].append(msg.data[2*i]   if len(msg.data) > 2*i   else 0.0)
-                self.Kr[i].append(msg.data[2*i+1] if len(msg.data) > 2*i+1 else 0.0)
+                self.Kx[i].append(msg.data[3*i]   if len(msg.data) > 3*i   else 0.0)
+                self.Kd[i].append(msg.data[3*i+1] if len(msg.data) > 3*i+1 else 0.0)
+                self.Kr[i].append(msg.data[3*i+2] if len(msg.data) > 3*i+2 else 0.0)
 
     def _cb_what(self, msg: Float64MultiArray):
         with self._lock:
@@ -236,18 +239,24 @@ class MRACMonitor(Node):
     # ─────────────────────────────────────────────────────────────────────────
     def _fig_Kx(self, t, Kx):
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=False)
-        fig.suptitle("Fig 2 — Adaptive Feedback Gain  K̂_x  (§17.3)\n"
-                     "K̂̇_x = −Γ_Kx · e · sign(b) · q − σ · K̂_x",
+        fig.suptitle("Fig 2 — Adaptive Feedback Gain  K̂_x = [Kp, Kd]\n"
+                     "K̂̇_x = −Γ_Kx · (eᵀPB) · sign(b) · [q, q̇] − σ · (K̂_x − K̂_x0)",
                      fontsize=13, fontweight="bold")
+        with self._lock:
+            Kd = [np.array(q) for q in self.Kd]
 
         for i, ax in enumerate(axes.flat):
             c = JOINT_COLORS[i]
             tt, kxi = self._trim(t, Kx[i])
             if len(kxi):
-                ax.plot(tt, kxi, color=c, lw=1.4)
+                ax.plot(tt, kxi, color=c, lw=1.4, label="Kp (on q)")
+                td, kdi = self._trim(t, Kd[i])
+                if len(kdi):
+                    ax.plot(td, kdi, color=c, lw=1.2, ls="--", label="Kd (on q̇)")
+                ax.legend(loc="lower right", fontsize=8)
                 ax.axhline(0, color="k", ls="--", lw=0.7, alpha=0.4)
                 ax.text(0.02, 0.97,
-                    f"init   = {kxi[0]:.3f}\nfinal  = {kxi[-1]:.3f}\nΔ      = {kxi[-1]-kxi[0]:.3f}",
+                    f"Kp init  = {kxi[0]:.3f}\nKp final = {kxi[-1]:.3f}\nΔ        = {kxi[-1]-kxi[0]:.3f}",
                     transform=ax.transAxes, va="top", fontsize=8,
                     family="monospace",
                     bbox=dict(boxstyle="round", fc="#dbeafe", alpha=0.85))
@@ -267,7 +276,7 @@ class MRACMonitor(Node):
     def _fig_Kr(self, t, Kr):
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=False)
         fig.suptitle("Fig 3 — Adaptive Feedforward Gain  K̂_r  (§17.3)\n"
-                     "K̂̇_r = −Γ_Kr · e · sign(b) · r − σ · K̂_r",
+                     "K̂̇_r = −Γ_Kr · (eᵀPB) · sign(b) · r − σ · (K̂_r − K̂_r0)",
                      fontsize=13, fontweight="bold")
 
         for i, ax in enumerate(axes.flat):
@@ -390,8 +399,8 @@ class MRACMonitor(Node):
     # ─────────────────────────────────────────────────────────────────────────
     def _fig_lyap(self, t, V):
         fig, ax = plt.subplots(figsize=(11, 5))
-        fig.suptitle("Fig 6 — Lyapunov Function V(e, Ŵ, K̃)\n"
-                     "V = e^T P e + ‖Ŵ‖²/Γ_W   (sigma > 0 → convergence to a residual set)",
+        fig.suptitle("Fig 6 — Tracking-error energy  eᵀPe  (error part of the Lyapunov function)\n"
+                     "per joint, from /mrac/lyapunov_V",
                      fontsize=13, fontweight="bold")
 
         for i in range(N_JOINTS):
@@ -481,7 +490,7 @@ class MRACMonitor(Node):
             self.t.clear()
             self.t_js.clear()
             for q in [*self.e, *self.de,
-                      *self.Kx, *self.Kr, *self.W_norm, *self.V,
+                      *self.Kx, *self.Kd, *self.Kr, *self.W_norm, *self.V,
                       *self.q_ref, *self.q_actual]:
                 q.clear()
             self._n = 0

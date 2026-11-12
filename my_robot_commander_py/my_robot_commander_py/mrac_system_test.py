@@ -76,7 +76,7 @@ class MRACSystemTester(Node):
         )
         self.mrac_cmd_sub = self.create_subscription(
             Float64MultiArray,
-            "/arm_effort_controller/commands",
+            "/mrac/tau",
             self.mrac_command_callback,
             qos,
         )
@@ -100,7 +100,7 @@ class MRACSystemTester(Node):
         self.follow_trajectory_client = ActionClient(
             self,
             FollowJointTrajectory,
-            "/arm_effort_controller/follow_joint_trajectory",
+            "/mrac_arm_controller/follow_joint_trajectory",
         )
 
         self.get_logger().info("MRAC System Tester initialized")
@@ -138,7 +138,7 @@ class MRACSystemTester(Node):
         try:
             # Check nodes
             nodes = self.get_node_names()
-            required_nodes = ["/robust_mrac_controller", "/move_group", "/gazebo"]
+            required_nodes = ["/mrac_arm_controller", "/move_group", "/gazebo"]
 
             self.get_logger().info("Checking for required nodes...")
             for node in required_nodes:
@@ -153,7 +153,7 @@ class MRACSystemTester(Node):
             topics = [t for t, _ in self.get_topic_names_and_types()]
             required_topics = [
                 "/joint_states",
-                "/arm_effort_controller/commands",
+                "/mrac/tau",
                 "/mrac/K_hat",
                 "/mrac/W_hat",
                 "/mrac/error",

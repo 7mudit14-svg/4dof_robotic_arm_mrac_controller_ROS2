@@ -78,7 +78,7 @@ check_section(
 # 9. Check MRAC controller
 check_section(
     "9. MRAC CONTROLLER STATUS",
-    "ros2 node info /robust_mrac_controller 2>&1 | head -50"
+    "ros2 node info /mrac_arm_controller 2>&1 | head -50"
 )
 
 # 10. Check for errors in logs
@@ -104,17 +104,17 @@ if "/controller_manager" not in nodes_output:
 else:
     print("✓ controller_manager is running")
 
-if "arm_effort_controller" not in controllers_output:
-    issues.append("❌ arm_effort_controller NOT LOADED - Check controller_manager config")
+if "mrac_arm_controller" not in controllers_output:
+    issues.append("❌ mrac_arm_controller NOT LOADED - Check controller_manager config")
 else:
-    print("✓ arm_effort_controller loaded")
+    print("✓ mrac_arm_controller loaded")
 
 if "joint_state_broadcaster" not in controllers_output:
     issues.append("❌ joint_state_broadcaster NOT LOADED")
 else:
     print("✓ joint_state_broadcaster loaded")
 
-if "/robust_mrac_controller" not in nodes_output:
+if "/mrac_arm_controller" not in nodes_output:
     issues.append("⚠ MRAC controller NOT RUNNING - may not be started yet or failed")
 else:
     print("✓ MRAC controller running")

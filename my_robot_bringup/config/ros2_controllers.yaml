@@ -1,22 +1,23 @@
 # ros2_controllers.yaml  (my_robot_bringup/config/)
-# Loaded by gz_ros2_control plugin via spawner.
+# Loaded by the gz_ros2_control plugin (see my_robot.ros2_control.xacro).
 #
-# FIXES:
-#  - arm_effort_controller type: effort_controllers/JointGroupEffortController
-#    does NOT exist in Jazzy. Correct type is:
-#    forward_command_controller/ForwardCommandController
-#  - update_rate: 1000 caused timing issues in VirtualBox — reduced to 100
-#  - Removed controller_names list (not needed, spawner handles loading)
+# The arm is driven by the MRAC controller plugin, which writes joint efforts
+# directly. Its own parameters live in
+# mrac_controller/src/robust_direct_mrac_params.yaml and are passed by the
+# spawner in my_robot_gz.launch.py.
 
 controller_manager:
   ros__parameters:
-    update_rate: 100
+    # 1 kHz = Gazebo's physics step. The MRAC gain bounds in
+    # robust_direct_mrac_params.yaml are sized for this rate; if the
+    # simulation cannot keep up, lower it together with those bounds.
+    update_rate: 1000
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    arm_effort_controller:
-      type: forward_command_controller/ForwardCommandController
+    mrac_arm_controller:
+      type: mrac_controller/MracController
 
     gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
@@ -30,15 +31,6 @@ joint_state_broadcaster:
       - joint4
       - gripper_left_finger_joint
       - gripper_right_finger_joint
-
-arm_effort_controller:
-  ros__parameters:
-    joints:
-      - joint1
-      - joint2
-      - joint3
-      - joint4
-    interface_name: effort
 
 gripper_controller:
   ros__parameters:

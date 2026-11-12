@@ -5,8 +5,15 @@ Key features:
   1. Gazebo plugin loads ros2_controllers.yaml via <parameters> tag
   2. Controller spawners chained with RegisterEventHandler for reliability
   3. All nodes get use_sim_time=True
-  4. MRAC action server: /mrac_arm_controller/follow_joint_trajectory
-  5. MoveIt sends trajectories to MRAC node via MoveItSimpleControllerManager
+  4. The MRAC controller is a ros2_control plugin (mrac_arm_controller) that
+     runs inside the controller manager, in step with the simulation
+  5. MRAC action server: /mrac_arm_controller/follow_joint_trajectory
+  6. MoveIt sends trajectories to it via MoveItSimpleControllerManager
+
+Arguments:
+  payload_mass:=0.5   payload mass in kg
+  headless:=true      run Gazebo without its GUI
+  use_rviz:=false     do not start RViz
 """
 
 import os
@@ -17,12 +24,14 @@ from launch.actions import (
     RegisterEventHandler,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
     LaunchConfiguration,
     Command,
     FindExecutable,
     PathJoinSubstitution,
+    PythonExpression,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -51,21 +60,19 @@ def generate_launch_description():
         default_value="0.0",
         description="Payload mass kg: 0.0 / 0.5 / 1.0 / 2.0",
     )
-    gamma_arg = DeclareLaunchArgument(
-        "gamma", default_value="1.0", description="MRAC adaptation gain"
+    headless_arg = DeclareLaunchArgument(
+        "headless",
+        default_value="false",
+        description="true = run Gazebo server only (no GUI)",
     )
-    kp_arg = DeclareLaunchArgument("kp", default_value="20.0")
-    kd_arg = DeclareLaunchArgument("kd", default_value="10.0")
+    use_rviz_arg = DeclareLaunchArgument(
+        "use_rviz", default_value="true", description="Start RViz"
+    )
 
     moveit_delay_arg = DeclareLaunchArgument(
         "moveit_delay",
         default_value="20.0",
         description="Seconds to wait before starting move_group",
-    )
-    mrac_delay_arg = DeclareLaunchArgument(
-        "mrac_delay",
-        default_value="35.0",
-        description="Seconds to wait before starting MRAC controller",
     )
     rviz_delay_arg = DeclareLaunchArgument(
         "rviz_delay",
@@ -115,7 +122,13 @@ def generate_launch_description():
             ]
         ),
         launch_arguments={
-            "gz_args": "-r empty.sdf",
+            "gz_args": PythonExpression(
+                [
+                    "'-r -s empty.sdf' if '",
+                    LaunchConfiguration("headless"),
+                    "'.lower() == 'true' else '-r empty.sdf'",
+                ]
+            ),
             "on_exit_shutdown": "true",
         }.items(),
     )
@@ -157,15 +170,20 @@ def generate_launch_description():
         output="screen",
     )
 
+    # MRAC controller plugin: loaded, configured with its parameter file and
+    # activated as soon as joint states are available, so the arm is held
+    # from the first seconds of the simulation.
     load_arm = Node(
         package="controller_manager",
         executable="spawner",
         arguments=[
-            "arm_effort_controller",
+            "mrac_arm_controller",
             "--controller-manager",
             "/controller_manager",
             "--controller-manager-timeout",
             "60",
+            "--param-file",
+            mrac_params_file,
         ],
         parameters=[{"use_sim_time": True}],
         output="screen",
@@ -223,24 +241,7 @@ def generate_launch_description():
         ],
     )
 
-    # ── 7. MRAC controller node ────────────────────────────────────────────
-    mrac_node = TimerAction(
-        period=LaunchConfiguration("mrac_delay"),
-        actions=[
-            Node(
-                package="mrac_controller",
-                executable="mrac_controller",
-                name="robust_mrac_controller",
-                output="screen",
-                parameters=[
-                    mrac_params_file,
-                    {"use_sim_time": True},
-                ],
-            )
-        ],
-    )
-
-    # ── 8. RViz ────────────────────────────────────────────────────────────
+    # ── 7. RViz ────────────────────────────────────────────────────────────
     rviz_node = TimerAction(
         period=LaunchConfiguration("rviz_delay"),
         actions=[
@@ -251,6 +252,7 @@ def generate_launch_description():
                 arguments=["-d", rviz_config],
                 parameters=[{"use_sim_time": True}],
                 output="screen",
+                condition=IfCondition(LaunchConfiguration("use_rviz")),
             )
         ],
     )
@@ -258,11 +260,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             payload_mass_arg,
-            gamma_arg,
-            kp_arg,
-            kd_arg,
+            headless_arg,
+            use_rviz_arg,
             moveit_delay_arg,
-            mrac_delay_arg,
             rviz_delay_arg,
             rsp_node,
             gz_sim,
@@ -272,7 +272,6 @@ def generate_launch_description():
             after_jsb_load_arm,
             after_arm_load_gripper,
             move_group_node,
-            mrac_node,
             rviz_node,
         ]
     )
